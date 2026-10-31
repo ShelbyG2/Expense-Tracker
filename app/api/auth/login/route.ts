@@ -2,13 +2,13 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { LoginSchema } from '@/schemas/auth'
 import { authenticate } from '@/services/auth-service'
 import { setSession } from '@/lib/session'
-import { checkRateLimit, resetRateLimit } from '@/lib/rate-limit'
+import { checkRateLimit, resetRateLimit, clientIp } from '@/lib/rate-limit'
 import { z } from 'zod'
 
 export async function POST(req: NextRequest) {
   // Rate limit by IP before doing any work.
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local'
-  if (!checkRateLimit(`login:${ip}`)) {
+  const ip = clientIp(req.headers)
+  if (!(await checkRateLimit(`login:${ip}`))) {
     return NextResponse.json(
       { error: 'Too many attempts. Try again in a minute.' },
       { status: 429 },
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  resetRateLimit(`login:${ip}`)
+  await resetRateLimit(`login:${ip}`)
 
   await setSession({
     userId: user.id,
@@ -49,5 +49,7 @@ export async function POST(req: NextRequest) {
     role: user.role,
   })
 
+  // The client sends a user with a temporary password straight to the
+  // forced change page (Phase 7A).
   return NextResponse.json({ user })
 }

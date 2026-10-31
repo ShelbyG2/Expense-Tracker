@@ -26,3 +26,25 @@ export const LoginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 })
 export type LoginInput = z.infer<typeof LoginSchema>
+
+// Changing your own password (all roles, /account). The current password is
+// required so a stolen session cannot lock the real owner out.
+export const ChangePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Enter your current password'),
+    newPassword: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .max(128, 'Password is too long'),
+    confirmPassword: z.string().min(1, 'Confirm your new password'),
+  })
+  .strict()
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
+  .refine((data) => data.newPassword !== data.currentPassword, {
+    message: 'The new password must be different from the current one',
+    path: ['newPassword'],
+  })
+export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>

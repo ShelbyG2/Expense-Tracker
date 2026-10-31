@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getSession } from '@/lib/session'
 import { listExpenses, type ExpenseView } from '@/services/expense-service'
+import { getOrganizationSettings } from '@/services/organization-service'
 import { ExpenseListQuerySchema } from '@/schemas/expense'
 import { formatAmount, formatDateOnly } from '@/lib/format'
 import { CATEGORIES, EXPENSE_STATUSES } from '@/lib/constants'
@@ -67,11 +68,14 @@ export default async function ExpensesPage({
     return qs ? `/expenses?${qs}` : '/expenses'
   }
 
-  const result = await listExpenses(session, query)
+  const [result, settings] = await Promise.all([
+    listExpenses(session, query),
+    getOrganizationSettings(session),
+  ])
 
   const scopeNote: Record<typeof session.role, string> = {
     staff: 'Your expenses',
-    manager: 'Expenses in your department',
+    manager: 'Expenses in your department, plus your own',
     admin: 'All expenses in your organization',
   }
 
@@ -97,12 +101,13 @@ export default async function ExpensesPage({
           </p>
           {session.role === 'manager' && !session.departmentId && (
             <p className="mt-1 text-xs text-neutral-500">
-              No department is assigned to you yet, so this shows expenses
-              recorded without a department.
+              No department is assigned to you yet, so there are no expenses to
+              show.
             </p>
           )}
         </div>
-        {session.role === 'staff' && (
+        {/* Managers record their own expenses too (Phase 7B). */}
+        {session.role !== 'admin' && (
           <Link
             href="/expenses/new"
             className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
@@ -260,8 +265,9 @@ export default async function ExpensesPage({
               </tr>
             ) : (
               result.items.map((expense) => {
+                // Owner only, pending only — same rule for staff and managers
+                // (an admin never owns an expense).
                 const canManage =
-                  session.role === 'staff' &&
                   expense.userId === session.userId &&
                   expense.status === 'pending'
 
@@ -278,7 +284,7 @@ export default async function ExpensesPage({
                       {expense.description || '—'}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
-                      {formatAmount(expense.amount)}
+                      {formatAmount(expense.amount, settings.currency)}
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -286,6 +292,11 @@ export default async function ExpensesPage({
                       >
                         {expense.status}
                       </span>
+                      {expense.reviewNote && (
+                        <span className="mt-1 block max-w-56 text-xs text-neutral-500">
+                          {expense.reviewNote}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {canManage ? (

@@ -6,15 +6,24 @@ import { usePathname } from 'next/navigation'
 type Role = 'admin' | 'manager' | 'staff'
 
 // Role-aware navigation. Each role sees only its permitted destinations.
-// Routes for later phases (e.g. /reports) will 404 until those phases land.
 const LINKS: { href: string; label: string; roles: Role[] }[] = [
-  { href: '/dashboard', label: 'Dashboard', roles: ['admin', 'manager', 'staff'] },
-  { href: '/expenses', label: 'Expenses', roles: ['admin', 'manager', 'staff'] },
+  {
+    href: '/dashboard',
+    label: 'Dashboard',
+    roles: ['admin', 'manager', 'staff'],
+  },
+  {
+    href: '/expenses',
+    label: 'Expenses',
+    roles: ['admin', 'manager', 'staff'],
+  },
   { href: '/budgets', label: 'Budgets', roles: ['admin', 'manager'] },
   { href: '/approvals', label: 'Approvals', roles: ['manager', 'admin'] },
   { href: '/reports', label: 'Reports', roles: ['admin', 'manager'] },
   { href: '/admin/users', label: 'Users', roles: ['admin'] },
   { href: '/admin/departments', label: 'Departments', roles: ['admin'] },
+  { href: '/admin/audit', label: 'Audit', roles: ['admin'] },
+  { href: '/admin/settings', label: 'Settings', roles: ['admin'] },
 ]
 
 export function Nav({ role }: { role: Role }) {

@@ -70,6 +70,22 @@ export const UpdateExpenseSchema = z
   })
 export type UpdateExpenseInput = z.infer<typeof UpdateExpenseSchema>
 
+// Managers/admins review a pending expense. The reason is optional and stored
+// on the expense so staff can see why something was rejected.
+export const ReviewExpenseSchema = z
+  .object({
+    action: z.enum(['approve', 'reject'], {
+      error: 'Choose approve or reject',
+    }),
+    reason: z
+      .string()
+      .trim()
+      .max(200, 'Reason must be 200 characters or fewer')
+      .optional(),
+  })
+  .strict()
+export type ReviewExpenseInput = z.infer<typeof ReviewExpenseSchema>
+
 export const ExpenseListQuerySchema = z
   .object({
     category: z.enum(CATEGORIES).optional(),

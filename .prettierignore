@@ -4,3 +4,8 @@ package-lock.json
 public
 *.md
 .env*
+
+# Agent-tool scaffolding (skills, type definitions), not application code.
+.agents
+.claude
+agent

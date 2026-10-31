@@ -30,8 +30,9 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 }
 
 // PATCH /api/expenses/:id — owner only, pending only (rule 4).
+// Staff and managers may edit their own expenses; admins stay read-only.
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
-  const guard = await requireRole('staff')
+  const guard = await requireRole('staff', 'manager')
   if (!guard.ok) return guard.response
 
   const { id } = await ctx.params
@@ -61,7 +62,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
 // DELETE /api/expenses/:id — owner only, pending only (rule 4).
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
-  const guard = await requireRole('staff')
+  const guard = await requireRole('staff', 'manager')
   if (!guard.ok) return guard.response
 
   const { id } = await ctx.params

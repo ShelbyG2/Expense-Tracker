@@ -23,15 +23,22 @@ async function main() {
   const e: string[] = []
   page.on('console', (m) => e.push(`[console:${m.type()}] ${m.text()}`))
   page.on('pageerror', (err) => e.push(`[pageerror] ${err.message}`))
-  page.on('requestfailed', (r) => e.push(`[reqfail] ${r.url()} -> ${r.failure()?.errorText}`))
+  page.on('requestfailed', (r) =>
+    e.push(`[reqfail] ${r.url()} -> ${r.failure()?.errorText}`),
+  )
   page.on('request', (r) => {
     const u = r.url()
-    if (u.includes('/api/') || u.includes('/dashboard') || u.includes('/login')) e.push(`[req] ${r.method()} ${u}`)
+    if (u.includes('/api/') || u.includes('/dashboard') || u.includes('/login'))
+      e.push(`[req] ${r.method()} ${u}`)
   })
   page.on('response', (r) => {
     const u = r.url()
     const sc = r.status()
-    if (u.includes('/api/') || u.includes('/dashboard') || u.includes('/login')) {
+    if (
+      u.includes('/api/') ||
+      u.includes('/dashboard') ||
+      u.includes('/login')
+    ) {
       if (sc >= 400) e.push(`[resp:${sc}] ${u}`)
     }
   })
@@ -39,7 +46,10 @@ async function main() {
   const log = (label: string, v: string) => console.log(`${label} ${v}`)
 
   try {
-    await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded', timeout: 20000 })
+    await page.goto(BASE + '/login', {
+      waitUntil: 'domcontentloaded',
+      timeout: 20000,
+    })
     const loginTitle = await page.textContent('h1')
     log('A) /login heading:', loginTitle?.trim() ?? '(empty)')
 
@@ -69,7 +79,10 @@ async function main() {
       log('H)  cookie expires:', new Date(session.expires * 1000).toISOString())
     }
 
-    const dashResp = await page.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded', timeout: 20000 })
+    const dashResp = await page.goto(BASE + '/dashboard', {
+      waitUntil: 'domcontentloaded',
+      timeout: 20000,
+    })
     const dashTitle = await page.textContent('h1')
     log('I) /dashboard heading now:', dashTitle?.trim() ?? '(empty)')
     log('J) /dashboard response status:', dashResp?.status() ?? 'n/a')

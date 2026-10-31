@@ -31,9 +31,9 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/expenses — staff record their own expenses.
+// POST /api/expenses — staff and managers record their own expenses.
 export async function POST(req: NextRequest) {
-  const guard = await requireRole('staff')
+  const guard = await requireRole('staff', 'manager')
   if (!guard.ok) return guard.response
 
   let body: unknown

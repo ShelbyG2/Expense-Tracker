@@ -8,11 +8,20 @@ import type { FilterQuery } from 'mongoose'
 import { connectDB } from '@/lib/db'
 import { httpError } from '@/lib/api-error'
 import type { Session } from '@/lib/auth'
+import { expenseScope, reviewScope } from '@/services/expense-scope'
 import { recordAudit } from '@/services/audit-service'
+import {
+  notifyBudgetCrossedAfterApproval,
+  notifyExpenseApproved,
+  notifyExpenseAwaitingReview,
+  notifyExpenseRejected,
+} from '@/services/notification-service'
 import { Expense, type IExpense } from '@/models/expense'
+import { Department } from '@/models/department'
 import type {
   CreateExpenseInput,
   ExpenseListQuery,
+  ReviewExpenseInput,
   UpdateExpenseInput,
 } from '@/schemas/expense'
 
@@ -21,6 +30,7 @@ export type ExpenseView = {
   organizationId: string
   departmentId: string | null
   userId: string
+  submitterRole: IExpense['submitterRole']
   category: IExpense['category']
   amount: number
   date: string
@@ -28,6 +38,7 @@ export type ExpenseView = {
   status: IExpense['status']
   reviewedBy: string | null
   reviewedAt: string | null
+  reviewNote: string | null
   createdAt: string
 }
 
@@ -41,22 +52,14 @@ export type ExpenseListResult = {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-// Read scope by role: staff own records, managers their department, admins the
-// whole organization. Exported so permission tests can exercise it directly.
-export function expenseScope(session: Session): FilterQuery<IExpense> {
-  if (session.role === 'staff') return { userId: session.userId }
-  if (session.role === 'manager') {
-    return { departmentId: session.departmentId ?? null }
-  }
-  return {}
-}
-
 function toView(doc: IExpense): ExpenseView {
   return {
     id: String(doc._id),
     organizationId: String(doc.organizationId),
     departmentId: doc.departmentId ? String(doc.departmentId) : null,
     userId: String(doc.userId),
+    // Documents created before Phase 7B have no submitterRole field.
+    submitterRole: doc.submitterRole ?? 'staff',
     category: doc.category,
     amount: doc.amount,
     date: doc.date.toISOString(),
@@ -64,21 +67,16 @@ function toView(doc: IExpense): ExpenseView {
     status: doc.status,
     reviewedBy: doc.reviewedBy ? String(doc.reviewedBy) : null,
     reviewedAt: doc.reviewedAt ? doc.reviewedAt.toISOString() : null,
+    reviewNote: doc.reviewNote ?? null,
     createdAt: doc.createdAt.toISOString(),
   }
 }
 
-export async function listExpenses(
-  session: Session,
+// Shared query runner: callers pass the already-scoped filter.
+async function runList(
+  filter: FilterQuery<IExpense>,
   query: ExpenseListQuery,
 ): Promise<ExpenseListResult> {
-  await connectDB()
-
-  const filter: FilterQuery<IExpense> = {
-    organizationId: session.organizationId,
-    ...expenseScope(session),
-  }
-
   if (query.category) filter.category = query.category
   if (query.status) filter.status = query.status
 
@@ -113,16 +111,71 @@ export async function listExpenses(
   }
 }
 
+export async function listExpenses(
+  session: Session,
+  query: ExpenseListQuery,
+): Promise<ExpenseListResult> {
+  await connectDB()
+
+  return runList(
+    { organizationId: session.organizationId, ...expenseScope(session) },
+    query,
+  )
+}
+
+// The approvals queue: only expenses the caller may actually approve or reject,
+// so a manager never sees their own submissions and an admin never sees staff
+// expenses.
+export async function listReviewQueue(
+  session: Session,
+  query: ExpenseListQuery,
+): Promise<ExpenseListResult> {
+  const scope = reviewScope(session)
+  if (!scope) throw httpError(403, 'Forbidden')
+
+  await connectDB()
+  return runList({ organizationId: session.organizationId, ...scope }, query)
+}
+
 export async function createExpense(
   session: Session,
   input: CreateExpenseInput,
 ): Promise<ExpenseView> {
+  // A manager's expense belongs to their department (it is what their budget
+  // counts and what an admin sees in the review queue), so it cannot exist
+  // without one.
+  if (session.role === 'manager' && !session.departmentId) {
+    throw httpError(
+      400,
+      'You need a department before you can record an expense',
+    )
+  }
+
   await connectDB()
+
+  // Archived departments are historical (Phase 7D): members keep reading
+  // their records but cannot add new spending to them.
+  if (session.departmentId) {
+    const department = await Department.findOne({
+      _id: session.departmentId,
+      organizationId: session.organizationId,
+    })
+      .select('isArchived')
+      .lean<{ isArchived?: boolean } | null>()
+    if (department?.isArchived) {
+      throw httpError(
+        400,
+        'Your department is archived, so you cannot record new expenses.',
+      )
+    }
+  }
 
   const doc = await Expense.create({
     organizationId: session.organizationId,
     departmentId: session.departmentId ?? null,
     userId: session.userId,
+    // From the session, never from the request body (Phase 7B).
+    submitterRole: session.role === 'manager' ? 'manager' : 'staff',
     category: input.category,
     amount: input.amount,
     date: input.date,
@@ -137,6 +190,9 @@ export async function createExpense(
     entity: 'Expense',
     entityId: String(doc._id),
   })
+
+  // The reviewers of this expense are told it is waiting (Phase 7E).
+  await notifyExpenseAwaitingReview(doc, '/approvals')
 
   return toView(doc)
 }
@@ -178,11 +234,9 @@ export async function updateExpense(
   })
 
   if (!doc) throw httpError(404, 'Expense not found')
-  // Defense in depth: the route already requires the staff role.
-  if (
-    session.role !== 'staff' ||
-    String(doc.userId) !== String(session.userId)
-  ) {
+  // Owner only. Managers see their whole department but may only change their
+  // own records (the route already excludes admins).
+  if (String(doc.userId) !== String(session.userId)) {
     throw httpError(403, 'Forbidden')
   }
   if (doc.status !== 'pending') {
@@ -207,6 +261,62 @@ export async function updateExpense(
   return toView(doc)
 }
 
+// Approve/reject a pending expense the caller may review: a manager reviews
+// staff expenses in their own department, an admin reviews manager expenses.
+// Both rules live in reviewScope, so an out-of-scope id is 404 (never approve
+// your own expense). Writes an audit entry (rule 7).
+export async function reviewExpense(
+  session: Session,
+  id: string,
+  input: ReviewExpenseInput,
+): Promise<ExpenseView> {
+  const scope = reviewScope(session)
+  if (!scope) throw httpError(403, 'Forbidden')
+
+  await connectDB()
+
+  if (!mongoose.isValidObjectId(id)) throw httpError(404, 'Expense not found')
+
+  // Scoped lookup: a record in another department is indistinguishable from a
+  // missing one (404), so IDs can't be probed.
+  const doc = await Expense.findOne({
+    _id: id,
+    organizationId: session.organizationId,
+    ...scope,
+  })
+
+  if (!doc) throw httpError(404, 'Expense not found')
+  if (doc.status !== 'pending') {
+    throw httpError(409, 'Only pending expenses can be reviewed')
+  }
+
+  doc.status = input.action === 'approve' ? 'approved' : 'rejected'
+  doc.reviewedBy = session.userId
+  doc.reviewedAt = new Date()
+  doc.reviewNote = input.reason?.trim() || null
+
+  await doc.save()
+
+  await recordAudit({
+    organizationId: session.organizationId,
+    userId: session.userId,
+    action: input.action === 'approve' ? 'approve' : 'reject',
+    entity: 'Expense',
+    entityId: String(doc._id),
+  })
+
+  // Phase 7E: the submitter hears the decision, and an approval that pushes a
+  // budget across a threshold notifies that department's managers.
+  if (doc.status === 'approved') {
+    await notifyExpenseApproved(doc, '/expenses')
+    await notifyBudgetCrossedAfterApproval(doc)
+  } else {
+    await notifyExpenseRejected(doc, '/expenses')
+  }
+
+  return toView(doc)
+}
+
 export async function deleteExpense(
   session: Session,
   id: string,
@@ -222,10 +332,7 @@ export async function deleteExpense(
   })
 
   if (!doc) throw httpError(404, 'Expense not found')
-  if (
-    session.role !== 'staff' ||
-    String(doc.userId) !== String(session.userId)
-  ) {
+  if (String(doc.userId) !== String(session.userId)) {
     throw httpError(403, 'Forbidden')
   }
   if (doc.status !== 'pending') {

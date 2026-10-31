@@ -139,6 +139,10 @@ export default function RegisterPage() {
                 {fieldErrors.email[0]}
               </p>
             )}
+            <p className="mt-1 text-xs text-neutral-500">
+              An email address belongs to one organization only. If it is
+              already in use, ask that organization&apos;s admin for an account.
+            </p>
           </div>
 
           <div>

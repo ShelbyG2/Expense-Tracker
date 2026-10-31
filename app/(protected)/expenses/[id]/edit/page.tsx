@@ -14,13 +14,15 @@ export default async function EditExpensePage({
   const session = await getSession()
   if (!session) redirect('/login')
 
-  if (session.role !== 'staff') redirect('/expenses')
+  if (session.role === 'admin') redirect('/expenses')
 
   const { id } = await params
   const expense = await getExpense(session, id)
 
-  // Out of scope and nonexistent both resolve to 404 (no ID enumeration).
-  if (!expense) notFound()
+  // Out of scope, nonexistent and somebody else's expense all resolve to 404
+  // (no ID enumeration). A manager can read their department's expenses, but
+  // may only edit their own (Phase 7B).
+  if (!expense || expense.userId !== session.userId) notFound()
 
   if (expense.status !== 'pending') {
     return (

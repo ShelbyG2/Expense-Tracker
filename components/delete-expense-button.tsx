@@ -2,9 +2,11 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useToast } from '@/components/toast'
 
 export function DeleteExpenseButton({ expenseId }: { expenseId: string }) {
   const router = useRouter()
+  const { toast } = useToast()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -22,6 +24,7 @@ export function DeleteExpenseButton({ expenseId }: { expenseId: string }) {
         setError(data.error ?? 'Unable to delete the expense')
         return
       }
+      toast('Expense deleted')
       router.refresh()
     } catch {
       setError('Unable to delete the expense. Please try again.')

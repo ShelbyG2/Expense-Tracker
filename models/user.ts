@@ -21,6 +21,9 @@ export interface IUser {
   passwordHash: string
   role: Role
   isActive: boolean
+  // True after an admin sets a temporary password: the user must change it
+  // before they can use any other page or API (Phase 7A).
+  mustChangePassword: boolean
   createdAt: Date
 }
 
@@ -47,6 +50,7 @@ const UserSchema = new Schema({
   passwordHash: { type: String, required: true, select: false },
   role: { type: String, enum: ROLES, required: true },
   isActive: { type: Boolean, default: true },
+  mustChangePassword: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
 })
 

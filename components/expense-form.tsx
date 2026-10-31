@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { CATEGORIES } from '@/lib/constants'
 import { todayDateOnly } from '@/lib/format'
 import { CreateExpenseSchema, UpdateExpenseSchema } from '@/schemas/expense'
+import { useToast } from '@/components/toast'
 
 type FieldErrors = Record<string, string[]>
 
@@ -30,6 +31,7 @@ export function ExpenseForm({
   initial?: ExpenseFormInitial
 }) {
   const router = useRouter()
+  const { toast } = useToast()
   const [category, setCategory] = useState(initial?.category ?? 'Transport')
   const [amount, setAmount] = useState(initial?.amount ?? '')
   const [date, setDate] = useState(initial?.date ?? todayDateOnly())
@@ -79,6 +81,7 @@ export function ExpenseForm({
         return
       }
 
+      toast(mode === 'create' ? 'Expense created' : 'Changes saved')
       router.push('/expenses')
       router.refresh()
     } catch {

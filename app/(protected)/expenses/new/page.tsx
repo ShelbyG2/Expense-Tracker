@@ -9,15 +9,17 @@ export default async function NewExpensePage() {
   const session = await getSession()
   if (!session) redirect('/login')
 
-  // Only staff record expenses in this phase.
-  if (session.role !== 'staff') redirect('/expenses')
+  // Staff and managers record expenses (managers' go to an admin to review).
+  if (session.role === 'admin') redirect('/expenses')
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">New expense</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          Recorded as pending until a manager reviews it.
+          {session.role === 'manager'
+            ? 'Recorded as pending until an admin reviews it.'
+            : 'Recorded as pending until a manager reviews it.'}
         </p>
       </div>
 

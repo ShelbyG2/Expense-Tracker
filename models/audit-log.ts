@@ -1,18 +1,12 @@
 import mongoose from 'mongoose'
 import type { Model } from 'mongoose'
+import { AUDIT_ACTIONS, type AuditAction } from '@/lib/constants'
 
 const { Schema, model, models } = mongoose
 
 // Rule 7: every create/update/delete/approve/reject writes an audit entry.
-export const AUDIT_ACTIONS = [
-  'create',
-  'update',
-  'delete',
-  'approve',
-  'reject',
-] as const
-
-export type AuditAction = (typeof AUDIT_ACTIONS)[number]
+// The vocabulary is shared with the admin filter UI (Phase 7D).
+export { AUDIT_ACTIONS, type AuditAction }
 
 export interface IAuditLog {
   _id: string
@@ -39,6 +33,7 @@ const AuditLogSchema = new Schema({
 
 AuditLogSchema.index({ organizationId: 1, createdAt: -1 })
 AuditLogSchema.index({ organizationId: 1, entity: 1, entityId: 1 })
+AuditLogSchema.index({ organizationId: 1, userId: 1, createdAt: -1 })
 
 export const AuditLog: Model<IAuditLog> =
   (models.AuditLog as Model<IAuditLog>) ||
